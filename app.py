@@ -8,9 +8,10 @@ rate-limiting) and exposes JSON endpoints the frontend calls:
     GET  /api/announcements?code=<scrip>&from=&to&pages=  -> cleaned announcements
     GET  /api/watchlist                                -> current watchlist
     POST /api/watchlist                                -> add a company
+    PATCH /api/watchlist/<id>                           -> update off_hours_priority
     DELETE /api/watchlist/<id>                          -> remove a company
     GET  /api/alerts?limit=50                          -> recent alerts feed
-    GET  /api/health                                    -> poller heartbeat
+    GET  /api/health                                    -> poller heartbeat (incl. priority-tick)
 
 New announcements for watchlisted companies are detected and delivered to
 Telegram by the separate poller.py process — see ARCHITECTURE.md.
@@ -179,7 +180,7 @@ def get_watchlist():
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT id, scrip_code, company_name, symbol, isin, added_at "
+            "SELECT id, scrip_code, company_name, symbol, isin, added_at, off_hours_priority "
             "FROM watchlist WHERE user_id = 1 AND active = 1 ORDER BY added_at DESC"
         ).fetchall()
         return jsonify([dict(r) for r in rows])
@@ -232,6 +233,24 @@ def remove_watchlist(watchlist_id: int):
         conn.close()
 
 
+@app.route("/api/watchlist/<int:watchlist_id>", methods=["PATCH"])
+def update_watchlist(watchlist_id: int):
+    body = request.get_json(silent=True) or {}
+    if "off_hours_priority" not in body:
+        return jsonify({"error": "Nothing to update — provide off_hours_priority."}), 400
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE watchlist SET off_hours_priority = ? WHERE id = ? AND user_id = 1",
+            (1 if body["off_hours_priority"] else 0, watchlist_id),
+        )
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
 @app.route("/api/alerts")
 def get_alerts():
     limit = min(int(request.args.get("limit", 50)), 200)
@@ -264,31 +283,43 @@ def get_alerts():
         conn.close()
 
 
+def _is_stale(timestamp: str | None, max_age: timedelta) -> bool:
+    if not timestamp:
+        return True
+    ts = datetime.fromisoformat(timestamp)
+    return (datetime.now(ts.tzinfo) - ts) > max_age
+
+
 @app.route("/api/health")
 def health():
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT last_tick_at, mode FROM poller_heartbeat WHERE id = 1"
+            "SELECT last_tick_at, mode, last_priority_tick_at FROM poller_heartbeat WHERE id = 1"
         ).fetchone()
         watchlist_count = conn.execute(
             "SELECT COUNT(*) AS c FROM watchlist WHERE active = 1"
+        ).fetchone()["c"]
+        priority_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM watchlist WHERE active = 1 AND off_hours_priority = 1"
         ).fetchone()["c"]
     finally:
         conn.close()
 
     last_tick_at = row["last_tick_at"] if row else None
-    stale = True
-    if last_tick_at:
-        age = datetime.now(datetime.fromisoformat(last_tick_at).tzinfo) - datetime.fromisoformat(last_tick_at)
-        stale = age > timedelta(minutes=50)  # generous vs. the 45min off-hours max interval
+    last_priority_tick_at = row["last_priority_tick_at"] if row else None
 
     return jsonify(
         {
             "poller_last_tick_at": last_tick_at,
             "poller_mode": row["mode"] if row else None,
-            "poller_stale": stale,
+            # generous vs. the 45min off-hours max interval
+            "poller_stale": _is_stale(last_tick_at, timedelta(minutes=50)),
+            "last_priority_tick_at": last_priority_tick_at,
+            # generous vs. the 5min priority-tick interval
+            "priority_stale": _is_stale(last_priority_tick_at, timedelta(minutes=15)),
             "watchlist_count": watchlist_count,
+            "priority_count": priority_count,
         }
     )
 

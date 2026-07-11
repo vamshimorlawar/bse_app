@@ -82,6 +82,14 @@ CREATE INDEX IF NOT EXISTS idx_watchlist_active ON watchlist(active, scrip_code)
 CREATE INDEX IF NOT EXISTS idx_outbox_status ON alert_outbox(status);
 """
 
+# Columns added after the initial release. CREATE TABLE IF NOT EXISTS won't
+# retrofit these onto an already-created table, so init_db() adds them here
+# if missing.
+MIGRATIONS = [
+    ("watchlist", "off_hours_priority", "INTEGER NOT NULL DEFAULT 0"),
+    ("poller_heartbeat", "last_priority_tick_at", "TEXT"),
+]
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -101,6 +109,11 @@ def init_db() -> None:
     conn = get_connection()
     try:
         conn.executescript(SCHEMA)
+
+        for table, column, coltype in MIGRATIONS:
+            existing_cols = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing_cols:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
 
         chat_id = os.environ.get("TELEGRAM_CHAT_ID")
         if chat_id:

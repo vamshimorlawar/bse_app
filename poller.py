@@ -6,9 +6,13 @@ Run as a separate long-lived process, independent of the Flask app:
     python poller.py
 
 Market hours (Mon-Fri 09:00-15:30 IST, minus market_holidays): polls every
-watchlisted scrip every 30s. Outside market hours: polls every scrip on a
+watchlisted scrip every 30s — this never changes, regardless of any
+per-scrip flag below. Outside market hours: polls every scrip on a
 randomized 15-45 minute interval (tightened to 5-15 min in the 08:30-09:00
-pre-open window). See ARCHITECTURE.md for the full design and rationale.
+pre-open window), EXCEPT scrips flagged `off_hours_priority` in the
+watchlist, which are polled every 5 minutes off-hours by a separate
+dedicated job (run_priority_tick). See ARCHITECTURE.md for the full design
+and rationale.
 """
 
 import json
@@ -39,6 +43,7 @@ OFF_HOURS_MIN_MINUTES = 15
 OFF_HOURS_MAX_MINUTES = 45
 PRE_OPEN_MIN_MINUTES = 5
 PRE_OPEN_MAX_MINUTES = 15
+PRIORITY_TICK_MINUTES = 5
 GLOBAL_COOLDOWN_SECONDS = 90
 SCRIP_FAILURE_BACKOFF_TICKS = 3
 MAX_OUTBOX_ATTEMPTS = 5
@@ -224,9 +229,15 @@ def run_tick(scheduler: BlockingScheduler) -> None:
             print(f"[poller] cooling down until {_global_cooldown_until.isoformat()}, skipping tick")
         else:
             market_hours = is_market_hours(now)
-            scrips = conn.execute(
+            # Off-hours, priority-flagged scrips are handled by the separate
+            # run_priority_tick job instead — excluding them here avoids
+            # polling the same scrip from two jobs at once.
+            query = (
                 "SELECT DISTINCT scrip_code FROM watchlist WHERE active = 1"
-            ).fetchall()
+                if market_hours
+                else "SELECT DISTINCT scrip_code FROM watchlist WHERE active = 1 AND off_hours_priority = 0"
+            )
+            scrips = conn.execute(query).fetchall()
 
             bse_client = BSE(download_folder=str(DOWNLOAD_DIR))
             try:
@@ -278,6 +289,54 @@ def _schedule_next(scheduler: BlockingScheduler) -> None:
     )
 
 
+def run_priority_tick() -> None:
+    """Off-hours-only job: polls scrips flagged off_hours_priority every
+    PRIORITY_TICK_MINUTES, much more often than the default 15-45min jitter.
+
+    No-ops during market hours — run_tick already covers every active scrip
+    every 30s then, regardless of this flag.
+    """
+    global _global_cooldown_until
+    now = datetime.now(IST)
+    if is_market_hours(now):
+        return
+
+    conn = get_connection()
+    try:
+        if _global_cooldown_until and now < _global_cooldown_until:
+            return
+
+        scrips = conn.execute(
+            "SELECT DISTINCT scrip_code FROM watchlist WHERE active = 1 AND off_hours_priority = 1"
+        ).fetchall()
+        if not scrips:
+            return
+
+        bse_client = BSE(download_folder=str(DOWNLOAD_DIR))
+        try:
+            for scrip in scrips:
+                scrip_code = scrip["scrip_code"]
+                if _is_backed_off(conn, scrip_code):
+                    continue
+                if not poll_scrip(conn, bse_client, scrip_code, market_hours=False):
+                    _global_cooldown_until = now + timedelta(seconds=GLOBAL_COOLDOWN_SECONDS)
+                    print(f"[poller] priority tick rate-limited on {scrip_code}, cooling down {GLOBAL_COOLDOWN_SECONDS}s")
+                    break
+        finally:
+            bse_client.exit()
+
+        drain_outbox(conn)
+
+        conn.execute(
+            "UPDATE poller_heartbeat SET last_priority_tick_at = ? WHERE id = 1", (now_iso(),)
+        )
+        conn.commit()
+    except Exception as exc:  # a tick must never kill the scheduler thread
+        print(f"[poller] priority tick failed: {exc}")
+    finally:
+        conn.close()
+
+
 def refresh_scrip_master_job() -> None:
     try:
         count = refresh_scrip_master()
@@ -309,6 +368,14 @@ def main() -> None:
             id="daily_scrip_master_refresh",
         )
         scheduler.add_job(run_tick, "date", run_date=datetime.now(IST), args=[scheduler], id=JOB_ID)
+        scheduler.add_job(
+            run_priority_tick,
+            "interval",
+            minutes=PRIORITY_TICK_MINUTES,
+            id="priority_tick",
+            max_instances=1,
+            misfire_grace_time=60,
+        )
 
         print("[poller] starting — Ctrl+C to stop")
         try:

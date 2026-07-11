@@ -37,7 +37,7 @@
     background:var(--panel);
     border-bottom:1px solid var(--line);
   }
-  .bar{max-width:960px;margin:0 auto;padding:14px 20px;}
+  .bar{max-width:960px;margin:0 auto;padding:14px 20px 0;}
   .brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;}
   .brand h1{
     font-size:18px;font-weight:700;margin:0;letter-spacing:-.01em;
@@ -47,8 +47,22 @@
   .dot{width:7px;height:7px;border-radius:50%;background:var(--live);box-shadow:0 0 0 3px rgba(28,138,74,.15);}
   .dot.stale{background:var(--stale);box-shadow:0 0 0 3px rgba(176,105,26,.15);}
 
+  /* ---- tab nav ---- */
+  .tabs{
+    max-width:960px;margin:0 auto;padding:12px 20px 0;
+    display:flex;gap:4px;flex-wrap:wrap;
+  }
+  .tab-btn{
+    font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--muted);
+    background:none;border:none;padding:9px 14px;cursor:pointer;border-bottom:2px solid transparent;
+    border-radius:7px 7px 0 0;
+  }
+  .tab-btn:hover{color:var(--ink);background:#f3f6f7;}
+  .tab-btn.active{color:var(--accent-ink);border-bottom-color:var(--accent);}
+  .tab-btn .cnt{font-family:var(--mono);font-weight:400;font-size:11px;color:var(--muted);margin-left:4px;}
+
   .controls{
-    max-width:960px;margin:0 auto;padding:0 20px 16px;
+    max-width:960px;margin:0 auto;padding:16px 0 16px;
     display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:end;
     position:relative;
   }
@@ -76,10 +90,18 @@
     border-radius:6px;padding:4px 9px;cursor:pointer;
   }
   button.remove:hover{background:#f9e5e5;}
+  button.priority-toggle{
+    font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--muted);
+    background:#f3f6f7;border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer;
+    white-space:nowrap;
+  }
+  button.priority-toggle:hover{background:#e9eef0;}
+  button.priority-toggle.on{color:#fff;background:var(--doc);border-color:var(--doc);}
+  button.priority-toggle.on:hover{background:#9a5714;}
 
   /* ---- search dropdown ---- */
   .dropdown{
-    position:absolute;left:20px;right:auto;top:100%;margin-top:2px;width:calc(100% - 200px);
+    position:absolute;left:0;right:auto;top:100%;margin-top:2px;width:calc(100% - 200px);
     max-width:600px;background:var(--panel);border:1px solid var(--line);border-radius:9px;
     box-shadow:0 8px 24px rgba(20,30,40,.12);z-index:20;overflow:hidden;display:none;
   }
@@ -92,8 +114,10 @@
   .dropdown .row .rn{font-weight:600;font-size:13.5px;flex:1;min-width:0;}
   .dropdown .row .rc{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap;}
 
-  /* ---- main ---- */
-  main{max-width:960px;margin:0 auto;padding:20px;display:flex;flex-direction:column;gap:26px;}
+  /* ---- main / tab panels ---- */
+  main{max-width:960px;margin:0 auto;padding:20px;}
+  .tab-panel{display:none;flex-direction:column;gap:26px;}
+  .tab-panel.active{display:flex;}
 
   section h2{
     font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
@@ -163,6 +187,18 @@
   .state.err h2{color:#8a3a3a;}
   .state.small{padding:20px 24px;}
 
+  /* ---- about page ---- */
+  .about{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px 24px;}
+  .about h3{font-size:14.5px;margin:20px 0 6px;}
+  .about h3:first-child{margin-top:0;}
+  .about p{font-size:13.5px;color:var(--muted);margin:0 0 8px;}
+  .about code{font-family:var(--mono);font-size:12px;background:#f3f6f7;padding:1px 5px;border-radius:4px;}
+  .about .note{
+    margin-top:16px;padding:10px 14px;background:var(--doc-bg);border:1px solid #ecdcc2;border-radius:8px;
+    font-size:12.5px;color:#8a5a1a;
+  }
+  .priority-note{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:-4px 0 4px;}
+
   @media(max-width:640px){
     .controls{grid-template-columns:1fr 1fr;}
     .controls .field.company-field{grid-column:1 / -1;}
@@ -181,26 +217,34 @@
       <span class="status" id="pollerStatus" title="poller heartbeat"><span class="dot" id="pollerDot"></span> <span id="pollerText">checking poller…</span></span>
     </div>
   </div>
-  <div class="controls">
-    <div class="field company-field">
-      <label for="q">Company / symbol / ISIN / code</label>
-      <input id="q" type="text" placeholder="e.g. Axis Bank, HDFCBANK, INE238A01034, 532215" autocomplete="off">
-      <div class="dropdown" id="dropdown"></div>
-    </div>
-    <div class="field">
-      <label for="from">From</label>
-      <input id="from" type="date">
-    </div>
-    <div class="field">
-      <label for="to">To</label>
-      <input id="to" type="date">
-    </div>
-    <button class="go" id="go">Fetch</button>
-  </div>
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="filings">Filings</button>
+    <button class="tab-btn" data-tab="watchlist">Watchlist<span class="cnt" id="tabWlCount"></span></button>
+    <button class="tab-btn" data-tab="priority">Off-Hours Pollers<span class="cnt" id="tabPriorityCount"></span></button>
+    <button class="tab-btn" data-tab="alerts">Alerts<span class="cnt" id="tabAlertsCount"></span></button>
+    <button class="tab-btn" data-tab="about">About</button>
+  </nav>
 </header>
 
 <main>
-  <section id="viewerSection">
+  <section class="tab-panel active" data-panel="filings">
+    <div class="controls">
+      <div class="field company-field">
+        <label for="q">Company / symbol / ISIN / code</label>
+        <input id="q" type="text" placeholder="e.g. Axis Bank, HDFCBANK, INE238A01034, 532215" autocomplete="off">
+        <div class="dropdown" id="dropdown"></div>
+      </div>
+      <div class="field">
+        <label for="from">From</label>
+        <input id="from" type="date">
+      </div>
+      <div class="field">
+        <label for="to">To</label>
+        <input id="to" type="date">
+      </div>
+      <button class="go" id="go">Fetch</button>
+    </div>
+
     <div class="company" id="company">
       <span class="name" id="cName">—</span>
       <span class="meta">code <b id="cCode">—</b></span>
@@ -218,19 +262,79 @@
     </div>
   </section>
 
-  <section>
-    <h2>Watchlist <span class="cnt" id="wlCount"></span></h2>
-    <div class="wl-list" id="wlList"></div>
-    <div class="state small" id="wlEmpty" style="display:none;">
-      <p>No companies watched yet. Search above and click “+ Add to watchlist”.</p>
-    </div>
+  <section class="tab-panel" data-panel="watchlist">
+    <section>
+      <h2>Watchlist <span class="cnt" id="wlCount"></span></h2>
+      <div class="wl-list" id="wlList"></div>
+      <div class="state small" id="wlEmpty" style="display:none;">
+        <p>No companies watched yet. Search on the Filings tab and click “+ Add to watchlist”.</p>
+      </div>
+    </section>
   </section>
 
-  <section>
-    <h2>Recent Alerts <span class="cnt" id="alertsCount"></span></h2>
-    <div class="feed" id="alertsFeed"></div>
-    <div class="state small" id="alertsEmpty" style="display:none;">
-      <p>No alerts yet. New announcements for your watchlisted companies during market hours (Mon–Fri 9:00–15:30 IST) will appear here and on Telegram.</p>
+  <section class="tab-panel" data-panel="priority">
+    <section>
+      <h2>Off-Hours Pollers <span class="cnt" id="priorityCount"></span></h2>
+      <p class="priority-note" id="priorityHealthNote"></p>
+      <div class="wl-list" id="priorityList"></div>
+      <div class="state small" id="priorityEmpty" style="display:none;">
+        <p>No companies on off-hours priority polling. Turn it on for a company from the Watchlist tab if you expect it might announce something outside market hours.</p>
+      </div>
+    </section>
+  </section>
+
+  <section class="tab-panel" data-panel="alerts">
+    <section>
+      <h2>Recent Alerts <span class="cnt" id="alertsCount"></span></h2>
+      <div class="feed" id="alertsFeed"></div>
+      <div class="state small" id="alertsEmpty" style="display:none;">
+        <p>No alerts yet. New announcements for your watchlisted companies during market hours (Mon–Fri 9:00–15:30 IST) will appear here and on Telegram.</p>
+      </div>
+    </section>
+  </section>
+
+  <section class="tab-panel" data-panel="about">
+    <div class="about">
+      <h3>What this is</h3>
+      <p>Search any BSE-listed company, browse its corporate announcements, and
+      build a watchlist. New announcements for watchlisted companies are
+      detected automatically and sent to you on Telegram.</p>
+
+      <h3>How monitoring works</h3>
+      <p>BSE doesn't push announcements to us — there's no webhook. A
+      background process (<code>poller.py</code>) checks BSE for each
+      watchlisted company on a schedule and compares against what it's
+      already seen.</p>
+      <p><b>Market hours</b> (Mon–Fri 9:00–15:30 IST): every watchlisted
+      company is checked every 30 seconds. This is the same for every
+      company, always — it never changes.</p>
+      <p><b>Outside market hours</b>: checking every company every 30s isn't
+      necessary, so by default each company is checked once every 15–45
+      minutes (randomized) to stay lightweight.</p>
+
+      <h3>Off-hours priority polling</h3>
+      <p>Sometimes you might expect a specific company to announce something
+      at any time — including outside market hours (e.g. weekend
+      acquisition news). Turning on <b>off-hours priority</b> for that
+      company (from the Watchlist tab) checks it every 5 minutes
+      off-hours instead of waiting up to 45 minutes. This only affects
+      off-hours behavior — market-hours polling is unaffected either way.
+      The <b>Off-Hours Pollers</b> tab lists every company currently set
+      this way.</p>
+
+      <h3>Alerts</h3>
+      <p>When a new announcement is found, it's recorded immediately and
+      queued for delivery to Telegram. If Telegram is briefly unreachable,
+      delivery retries automatically on the next check — detection and
+      delivery are decoupled, so a Telegram hiccup never causes a missed
+      announcement.</p>
+
+      <div class="note">
+        This rides the same unofficial, undocumented JSON endpoints the BSE
+        website itself uses — there's no official API or SLA. It can change
+        or rate-limit without notice. Fine for personal use; don't build
+        anything commercial or mission-critical on it.
+      </div>
     </div>
   </section>
 </main>
@@ -240,6 +344,16 @@
   const feed = $('feed'), state = $('state'), company = $('company'), goBtn = $('go'), dropdown = $('dropdown');
   let selected = null;      // currently selected company {bse_code, symbol, company_name, isin}
   let watchlist = [];       // cached current watchlist rows
+  let lastHealth = null;    // cached /api/health response
+
+  // ---- tabs ----
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => showTab(btn.dataset.tab));
+  });
+  function showTab(name){
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+  }
 
   (function initDates(){
     const to = new Date(), from = new Date(); from.setDate(from.getDate()-30);
@@ -400,26 +514,43 @@
     }
   });
 
-  async function loadWatchlist(){
-    const r = await fetch('/api/watchlist');
-    watchlist = await r.json();
-    $('wlCount').textContent = watchlist.length ? `(${watchlist.length})` : "";
-    $('wlEmpty').style.display = watchlist.length ? "none" : "block";
-    $('wlList').innerHTML = watchlist.map(w => `
+  async function setPriority(id, on){
+    await fetch('/api/watchlist/'+id, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({off_hours_priority: on}),
+    });
+    await loadWatchlist();
+  }
+
+  function watchlistRowHtml(w){
+    const priorityOn = !!w.off_hours_priority;
+    return `
       <div class="wl-row" data-id="${w.id}">
         <span class="rn" data-code="${esc(w.scrip_code)}">${esc(w.company_name||w.symbol||w.scrip_code)}</span>
         <span class="rc">${esc(w.symbol||'')} · code ${esc(w.scrip_code)}${w.isin?` · ${esc(w.isin)}`:''}</span>
         <span class="spacer"></span>
+        <button class="priority-toggle${priorityOn?' on':''}" data-id="${w.id}" data-on="${priorityOn?'1':'0'}">
+          ${priorityOn ? '⏱ off-hours: ON' : '⏱ off-hours: off'}
+        </button>
         <button class="remove" data-id="${w.id}">remove</button>
-      </div>`).join("");
+      </div>`;
+  }
 
-    $('wlList').querySelectorAll('.rn[data-code]').forEach(el => {
+  function bindWatchlistRowEvents(container){
+    container.querySelectorAll('.rn[data-code]').forEach(el => {
       el.addEventListener('click', () => {
         const row = watchlist.find(w => String(w.scrip_code) === el.dataset.code);
         if(row) selectCompany({bse_code: row.scrip_code, symbol: row.symbol, company_name: row.company_name, isin: row.isin});
+        showTab('filings');
       });
     });
-    $('wlList').querySelectorAll('button.remove').forEach(btn => {
+    container.querySelectorAll('button.priority-toggle').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        await setPriority(btn.dataset.id, btn.dataset.on !== '1');
+      });
+    });
+    container.querySelectorAll('button.remove').forEach(btn => {
       btn.addEventListener('click', async () => {
         btn.disabled = true; btn.textContent = "…";
         await fetch('/api/watchlist/'+btn.dataset.id, {method:'DELETE'});
@@ -429,11 +560,43 @@
     });
   }
 
+  async function loadWatchlist(){
+    const r = await fetch('/api/watchlist');
+    watchlist = await r.json();
+
+    $('wlCount').textContent = watchlist.length ? `(${watchlist.length})` : "";
+    $('tabWlCount').textContent = watchlist.length ? `(${watchlist.length})` : "";
+    $('wlEmpty').style.display = watchlist.length ? "none" : "block";
+    $('wlList').innerHTML = watchlist.map(watchlistRowHtml).join("");
+    bindWatchlistRowEvents($('wlList'));
+
+    renderPriorityTab();
+  }
+
+  function renderPriorityTab(){
+    const priority = watchlist.filter(w => w.off_hours_priority);
+    $('priorityCount').textContent = priority.length ? `(${priority.length})` : "";
+    $('tabPriorityCount').textContent = priority.length ? `(${priority.length})` : "";
+    $('priorityEmpty').style.display = priority.length ? "none" : "block";
+    $('priorityList').innerHTML = priority.map(watchlistRowHtml).join("");
+    bindWatchlistRowEvents($('priorityList'));
+
+    const note = $('priorityHealthNote');
+    if(!priority.length || !lastHealth){ note.textContent = ""; return; }
+    if(!lastHealth.last_priority_tick_at){
+      note.textContent = "Priority checks run only outside market hours — none has run yet.";
+    } else {
+      note.textContent = (lastHealth.priority_stale ? "⚠ stale · " : "✓ ") +
+        "last priority check " + fmtDate(lastHealth.last_priority_tick_at) + " (every 5 min off-hours)";
+    }
+  }
+
   async function loadAlerts(){
     try{
       const r = await fetch('/api/alerts?limit=30');
       const items = await r.json();
       $('alertsCount').textContent = items.length ? `(${items.length})` : "";
+      $('tabAlertsCount').textContent = items.length ? `(${items.length})` : "";
       $('alertsEmpty').style.display = items.length ? "none" : "block";
       $('alertsFeed').innerHTML = items.map(a => filingCard(a, true)).join("");
     }catch(e){ /* transient — next poll will retry */ }
@@ -443,6 +606,7 @@
     try{
       const r = await fetch('/api/health');
       const h = await r.json();
+      lastHealth = h;
       const dot = $('pollerDot'), text = $('pollerText');
       if(!h.poller_last_tick_at){
         dot.classList.add('stale');
@@ -451,6 +615,7 @@
         dot.classList.toggle('stale', h.poller_stale);
         text.textContent = (h.poller_stale ? "poller stale · " : "poller live · ") + (h.poller_mode || "");
       }
+      renderPriorityTab();
     }catch(e){
       $('pollerDot').classList.add('stale');
       $('pollerText').textContent = "backend unreachable";

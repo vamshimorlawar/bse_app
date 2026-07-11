@@ -142,6 +142,32 @@ process, the batch takes at least `N × 0.125s` from throttle spacing alone
   process's request rate is being throttled server-side, not just one
   scrip).
 
+### 3.6 Per-company off-hours priority override (implemented)
+
+Users can flag an individual watchlisted company (`watchlist.off_hours_priority`)
+to be checked every 5 minutes off-hours instead of the default 15-45 minute
+jitter — e.g. when they have specific reason to expect an announcement at
+any time (a weekend acquisition, etc.). **Market-hours behavior is
+unaffected either way** — every watchlisted company is still polled every
+30s during market hours regardless of this flag.
+
+Implemented as a second, independent APScheduler job (`run_priority_tick`,
+fixed 5-minute interval) rather than folding it into the main tick's dynamic
+reschedule logic, because its cadence doesn't vary with market hours the way
+the main tick's does — it only turns on/off:
+- During market hours it's a no-op (the main tick already covers every
+  active scrip then).
+- Off-hours it polls only `WHERE active = 1 AND off_hours_priority = 1`,
+  reusing the same `poll_scrip()`/`drain_outbox()`/backoff helpers as the
+  main tick — no duplicated fetch/dedupe/alert logic.
+
+The main tick's off-hours query excludes priority-flagged scrips
+(`AND off_hours_priority = 0`) so the two jobs never poll the same scrip at
+the same time — this keeps the two-job design race-free without extra
+locking. A UI page ("Off-Hours Pollers") lists every company currently
+flagged this way, sourced from the existing `GET /api/watchlist` response
+filtered client-side (no new read endpoint needed).
+
 ## 4. Dedup Logic
 
 Since `announcements()` has no cursor, the design always re-fetches the
