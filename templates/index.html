@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BSE Filings — Corporate Announcements</title>
+<title>BSE Filings — Watchlist &amp; Alerts</title>
 <style>
   :root{
     --bg:#eef1f4;
@@ -16,6 +16,7 @@
     --doc:#b0691a;         /* stamped-paper amber for PDFs */
     --doc-bg:#fbf2e4;
     --live:#1c8a4a;
+    --stale:#b0691a;
     --mono:ui-monospace,"SF Mono","Cascadia Mono","Roboto Mono",Menlo,Consolas,monospace;
     --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   }
@@ -36,18 +37,20 @@
     background:var(--panel);
     border-bottom:1px solid var(--line);
   }
-  .bar{max-width:920px;margin:0 auto;padding:14px 20px;}
+  .bar{max-width:960px;margin:0 auto;padding:14px 20px;}
   .brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;}
   .brand h1{
     font-size:18px;font-weight:700;margin:0;letter-spacing:-.01em;
   }
   .brand .sub{font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
-  .status{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;}
+  .status{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:default;}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--live);box-shadow:0 0 0 3px rgba(28,138,74,.15);}
+  .dot.stale{background:var(--stale);box-shadow:0 0 0 3px rgba(176,105,26,.15);}
 
   .controls{
-    max-width:920px;margin:0 auto;padding:0 20px 16px;
+    max-width:960px;margin:0 auto;padding:0 20px 16px;
     display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:end;
+    position:relative;
   }
   .field{display:flex;flex-direction:column;gap:4px;min-width:0;}
   .field label{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
@@ -57,15 +60,46 @@
   }
   .field input[type=date]{font-family:var(--mono);font-size:12.5px;}
   .field input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent);}
-  button.go{
+  button.go, button.add{
     font-family:var(--sans);font-size:14px;font-weight:600;color:#fff;background:var(--accent);
     border:none;border-radius:7px;padding:10px 18px;cursor:pointer;white-space:nowrap;
   }
-  button.go:hover{background:var(--accent-ink);}
+  button.go:hover, button.add:hover{background:var(--accent-ink);}
   button.go:disabled{opacity:.55;cursor:progress;}
+  button.ghost{
+    font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--accent-ink);
+    background:#eef2f4;border:1px solid var(--line);border-radius:7px;padding:6px 11px;cursor:pointer;
+  }
+  button.ghost:hover{background:#e3e9ec;}
+  button.remove{
+    font-family:var(--mono);font-size:12px;color:#8a3a3a;background:#fdf4f4;border:1px solid #e6b8b8;
+    border-radius:6px;padding:4px 9px;cursor:pointer;
+  }
+  button.remove:hover{background:#f9e5e5;}
+
+  /* ---- search dropdown ---- */
+  .dropdown{
+    position:absolute;left:20px;right:auto;top:100%;margin-top:2px;width:calc(100% - 200px);
+    max-width:600px;background:var(--panel);border:1px solid var(--line);border-radius:9px;
+    box-shadow:0 8px 24px rgba(20,30,40,.12);z-index:20;overflow:hidden;display:none;
+  }
+  .dropdown.show{display:block;}
+  .dropdown .row{
+    display:flex;align-items:center;gap:10px;padding:9px 13px;cursor:pointer;border-bottom:1px solid var(--line);
+  }
+  .dropdown .row:last-child{border-bottom:none;}
+  .dropdown .row:hover{background:#f3f6f7;}
+  .dropdown .row .rn{font-weight:600;font-size:13.5px;flex:1;min-width:0;}
+  .dropdown .row .rc{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap;}
 
   /* ---- main ---- */
-  main{max-width:920px;margin:0 auto;padding:20px;}
+  main{max-width:960px;margin:0 auto;padding:20px;display:flex;flex-direction:column;gap:26px;}
+
+  section h2{
+    font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+    margin:0 0 10px;display:flex;align-items:center;gap:10px;
+  }
+  section h2 .cnt{font-family:var(--mono);font-weight:400;text-transform:none;letter-spacing:0;font-size:11.5px;}
 
   .company{
     display:none;align-items:baseline;gap:14px;flex-wrap:wrap;
@@ -75,9 +109,21 @@
   .company .name{font-size:16px;font-weight:700;}
   .company .meta{font-family:var(--mono);font-size:12px;color:var(--muted);}
   .company .meta b{color:var(--accent-ink);font-weight:600;}
-  .company .n{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+  .company .n{font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+  .company .spacer{margin-left:auto;}
 
-  /* ---- filing cards ---- */
+  /* ---- watchlist rows ---- */
+  .wl-list{display:flex;flex-direction:column;gap:8px;}
+  .wl-row{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 14px;
+  }
+  .wl-row .rn{font-weight:600;font-size:14px;cursor:pointer;}
+  .wl-row .rn:hover{color:var(--accent-ink);text-decoration:underline;}
+  .wl-row .rc{font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+  .wl-row .spacer{margin-left:auto;}
+
+  /* ---- filing / alert cards ---- */
   .feed{display:flex;flex-direction:column;gap:10px;}
   .card{
     position:relative;background:var(--panel);border:1px solid var(--line);
@@ -89,6 +135,7 @@
     font-family:var(--mono);font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;
     padding:2px 8px;border-radius:999px;background:#eef2f4;color:var(--accent-ink);border:1px solid var(--line);
   }
+  .chip.co{color:var(--muted);}
   .time{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-left:auto;}
   .subject{font-size:14.5px;font-weight:600;letter-spacing:-.005em;margin:2px 0;}
   .headline{font-size:13px;color:var(--muted);margin:2px 0 0;}
@@ -103,20 +150,23 @@
   .nopdf{font-family:var(--mono);font-size:11.5px;color:#9aa4ad;}
   .detail{font-family:var(--mono);font-size:11.5px;color:var(--muted);text-decoration:none;margin-left:auto;}
   .detail:hover{color:var(--accent-ink);text-decoration:underline;}
+  .sent{font-family:var(--mono);font-size:10.5px;color:var(--live);}
 
   /* ---- states ---- */
   .state{
-    text-align:center;padding:56px 24px;color:var(--muted);
+    text-align:center;padding:40px 24px;color:var(--muted);
     background:var(--panel);border:1px dashed var(--line);border-radius:10px;
   }
-  .state h2{font-size:15px;font-weight:600;color:var(--ink);margin:0 0 6px;}
+  .state h2{font-size:15px;font-weight:600;color:var(--ink);margin:0 0 6px;text-transform:none;letter-spacing:0;}
   .state p{margin:0;font-size:13.5px;}
   .state.err{border-color:#e6b8b8;background:#fdf4f4;color:#8a3a3a;}
   .state.err h2{color:#8a3a3a;}
+  .state.small{padding:20px 24px;}
 
   @media(max-width:640px){
     .controls{grid-template-columns:1fr 1fr;}
     .controls .field.company-field{grid-column:1 / -1;}
+    .dropdown{width:calc(100% - 40px);}
     button.go{grid-column:1 / -1;}
     .status{display:none;}
   }
@@ -127,14 +177,15 @@
   <div class="bar">
     <div class="brand">
       <h1>BSE Filings</h1>
-      <span class="sub">Corporate Announcements</span>
-      <span class="status"><span class="dot"></span> live from BSE feed</span>
+      <span class="sub">Watchlist &amp; Alerts</span>
+      <span class="status" id="pollerStatus" title="poller heartbeat"><span class="dot" id="pollerDot"></span> <span id="pollerText">checking poller…</span></span>
     </div>
   </div>
   <div class="controls">
     <div class="field company-field">
       <label for="q">Company / symbol / ISIN / code</label>
       <input id="q" type="text" placeholder="e.g. Axis Bank, HDFCBANK, INE238A01034, 532215" autocomplete="off">
+      <div class="dropdown" id="dropdown"></div>
     </div>
     <div class="field">
       <label for="from">From</label>
@@ -149,33 +200,53 @@
 </header>
 
 <main>
-  <div class="company" id="company">
-    <span class="name" id="cName">—</span>
-    <span class="meta">code <b id="cCode">—</b></span>
-    <span class="meta" id="cIsinWrap">isin <b id="cIsin">—</b></span>
-    <span class="n" id="cCount"></span>
-  </div>
+  <section id="viewerSection">
+    <div class="company" id="company">
+      <span class="name" id="cName">—</span>
+      <span class="meta">code <b id="cCode">—</b></span>
+      <span class="meta" id="cIsinWrap">isin <b id="cIsin">—</b></span>
+      <span class="n" id="cCount"></span>
+      <span class="spacer"></span>
+      <button class="add" id="addBtn">+ Add to watchlist</button>
+    </div>
 
-  <div id="feed" class="feed"></div>
+    <div id="feed" class="feed"></div>
 
-  <div class="state" id="state">
-    <h2>Search a company to begin</h2>
-    <p>Type a name, ticker, ISIN or BSE scrip code, pick a date range, and hit Fetch.</p>
-  </div>
+    <div class="state" id="state">
+      <h2>Search a company to begin</h2>
+      <p>Type a name, ticker, ISIN or BSE scrip code — pick a match from the dropdown to view its filings and add it to your watchlist.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Watchlist <span class="cnt" id="wlCount"></span></h2>
+    <div class="wl-list" id="wlList"></div>
+    <div class="state small" id="wlEmpty" style="display:none;">
+      <p>No companies watched yet. Search above and click “+ Add to watchlist”.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Recent Alerts <span class="cnt" id="alertsCount"></span></h2>
+    <div class="feed" id="alertsFeed"></div>
+    <div class="state small" id="alertsEmpty" style="display:none;">
+      <p>No alerts yet. New announcements for your watchlisted companies during market hours (Mon–Fri 9:00–15:30 IST) will appear here and on Telegram.</p>
+    </div>
+  </section>
 </main>
 
 <script>
   const $ = id => document.getElementById(id);
-  const feed = $('feed'), state = $('state'), company = $('company'), goBtn = $('go');
+  const feed = $('feed'), state = $('state'), company = $('company'), goBtn = $('go'), dropdown = $('dropdown');
+  let selected = null;      // currently selected company {bse_code, symbol, company_name, isin}
+  let watchlist = [];       // cached current watchlist rows
 
-  // default window: last 30 days
   (function initDates(){
     const to = new Date(), from = new Date(); from.setDate(from.getDate()-30);
     const iso = d => d.toISOString().slice(0,10);
     $('to').value = iso(to); $('from').value = iso(from);
   })();
 
-  // give each category a stable left-rule colour
   const RULE = ["#0e5c63","#7a4fb0","#b0691a","#2f7d3a","#b03a4f","#3a5db0","#5b6672"];
   const ruleFor = c => RULE[[...(c||"General")].reduce((a,ch)=>a+ch.charCodeAt(0),0) % RULE.length];
 
@@ -186,12 +257,17 @@
     return d.toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true});
   };
   const esc = s => (s||"").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(()=>fn(...a), ms); }; };
 
   function showState(title, msg, isErr){
     feed.innerHTML = "";
     state.style.display = "block";
     state.className = "state" + (isErr ? " err" : "");
     state.innerHTML = `<h2>${esc(title)}</h2><p>${esc(msg)}</p>`;
+  }
+
+  function isWatched(bseCode){
+    return watchlist.some(w => String(w.scrip_code) === String(bseCode));
   }
 
   function renderCompany(info, count, total){
@@ -201,7 +277,20 @@
     if(info.isin){ $('cIsin').textContent = info.isin; $('cIsinWrap').style.display=""; }
     else { $('cIsinWrap').style.display="none"; }
     const more = (total && total > count) ? ` of ${total}` : "";
-    $('cCount').textContent = `${count} filing${count===1?"":"s"}${more}`;
+    $('cCount').textContent = (count!==undefined) ? `${count} filing${count===1?"":"s"}${more}` : "";
+    updateAddButton();
+  }
+
+  function updateAddButton(){
+    const btn = $('addBtn');
+    if(!selected) return;
+    if(isWatched(selected.bse_code)){
+      btn.textContent = "✓ In watchlist";
+      btn.disabled = true;
+    } else {
+      btn.textContent = "+ Add to watchlist";
+      btn.disabled = false;
+    }
   }
 
   function renderFeed(items){
@@ -210,52 +299,169 @@
       return;
     }
     state.style.display = "none";
-    feed.innerHTML = items.map(a => {
-      const cat = a.category || a.subcategory || "General";
-      const pdf = a.pdf_url
-        ? `<a class="pdf" href="${esc(a.pdf_url)}" target="_blank" rel="noopener">↧ PDF${a.attach_size_kb?` <span class="sz">${a.attach_size_kb} KB</span>`:""}</a>`
-        : `<span class="nopdf">no attachment</span>`;
-      const detail = a.detail_url ? `<a class="detail" href="${esc(a.detail_url)}" target="_blank" rel="noopener">stock page →</a>` : "";
-      const headline = (a.headline && a.headline !== a.subject) ? `<p class="headline">${esc(a.headline)}</p>` : "";
-      return `<article class="card" style="--rule:${ruleFor(cat)}">
-        <div class="top">
-          <span class="chip">${esc(cat)}</span>
-          <span class="time">${esc(fmtDate(a.date))}</span>
-        </div>
-        <div class="subject">${esc(a.subject || a.headline || "(no subject)")}</div>
-        ${headline}
-        <div class="foot">${pdf}${detail}</div>
-      </article>`;
-    }).join("");
+    feed.innerHTML = items.map(a => filingCard(a, false)).join("");
   }
 
-  async function run(){
-    const q = $('q').value.trim();
-    if(!q){ $('q').focus(); return; }
-    goBtn.disabled = true; goBtn.textContent = "Fetching…";
+  function filingCard(a, showCompany){
+    const cat = a.category || a.subcategory || "General";
+    const pdf = a.pdf_url
+      ? `<a class="pdf" href="${esc(a.pdf_url)}" target="_blank" rel="noopener">↧ PDF${a.attach_size_kb?` <span class="sz">${a.attach_size_kb} KB</span>`:""}</a>`
+      : `<span class="nopdf">no attachment</span>`;
+    const detail = a.detail_url ? `<a class="detail" href="${esc(a.detail_url)}" target="_blank" rel="noopener">stock page →</a>` : "";
+    const headline = (a.headline && a.headline !== a.subject) ? `<p class="headline">${esc(a.headline)}</p>` : "";
+    const companyChip = showCompany ? `<span class="chip co">${esc(a.company || a.scrip_code)}</span>` : "";
+    const sent = a.alert_status ? `<span class="sent">${a.alert_status === 'sent' ? '✓ telegram sent' : a.alert_status}</span>` : "";
+    return `<article class="card" style="--rule:${ruleFor(cat)}">
+      <div class="top">
+        ${companyChip}
+        <span class="chip">${esc(cat)}</span>
+        <span class="time">${esc(fmtDate(a.date || a.first_seen_at))}</span>
+      </div>
+      <div class="subject">${esc(a.subject || a.headline || "(no subject)")}</div>
+      ${headline}
+      <div class="foot">${pdf}${detail}${sent}</div>
+    </article>`;
+  }
+
+  async function loadAnnouncements(code, info){
     company.classList.remove('show');
-    showState("Looking up company…", "Resolving “"+q+"” against the BSE scrip master.");
+    showState("Fetching filings…", "Pulling announcements for "+(info.company_name||code)+".");
     try{
-      const s = await fetch('/api/search?q='+encodeURIComponent(q)).then(r=>r.json().then(j=>({ok:r.ok,j})));
-      if(!s.ok){ showState("Couldn’t find that company", s.j.error || "No match.", true); return; }
-      const info = s.j;
-
-      showState("Fetching filings…", "Pulling announcements for "+(info.company_name||info.bse_code)+".");
-      const url = `/api/announcements?code=${encodeURIComponent(info.bse_code)}&from=${$('from').value}&to=${$('to').value}`;
-      const a = await fetch(url).then(r=>r.json().then(j=>({ok:r.ok,j})));
-      if(!a.ok){ showState("Couldn’t load filings", a.j.error || "Request failed.", true); return; }
-
-      renderCompany(info, a.j.count, a.j.total_available);
-      renderFeed(a.j.announcements);
+      const url = `/api/announcements?code=${encodeURIComponent(code)}&from=${$('from').value}&to=${$('to').value}`;
+      const r = await fetch(url);
+      const j = await r.json();
+      if(!r.ok){ showState("Couldn't load filings", j.error || "Request failed.", true); return; }
+      renderCompany(info, j.count, j.total_available);
+      renderFeed(j.announcements);
     }catch(e){
       showState("Something went wrong", "Is the backend running? "+e.message, true);
-    }finally{
-      goBtn.disabled = false; goBtn.textContent = "Fetch";
     }
   }
 
-  goBtn.addEventListener('click', run);
-  $('q').addEventListener('keydown', e => { if(e.key==='Enter') run(); });
+  function selectCompany(info){
+    selected = info;
+    dropdown.classList.remove('show');
+    $('q').value = info.company_name || info.symbol || info.bse_code;
+    loadAnnouncements(info.bse_code, info);
+  }
+
+  const doSearch = debounce(async () => {
+    const q = $('q').value.trim();
+    if(!q){ dropdown.classList.remove('show'); return; }
+    try{
+      const r = await fetch('/api/search?q='+encodeURIComponent(q));
+      const j = await r.json();
+      if(!r.ok || !Array.isArray(j) || !j.length){
+        dropdown.innerHTML = `<div class="row" style="cursor:default;color:var(--muted);">${esc((j&&j.error)||'No matches.')}</div>`;
+        dropdown.classList.add('show');
+        return;
+      }
+      dropdown.innerHTML = j.map(c => `
+        <div class="row" data-code="${esc(c.bse_code)}">
+          <span class="rn">${esc(c.company_name||c.symbol)}</span>
+          <span class="rc">${esc(c.symbol||'')} · ${esc(c.bse_code)}</span>
+        </div>`).join("");
+      dropdown.classList.add('show');
+      const matches = j;
+      dropdown.querySelectorAll('.row[data-code]').forEach((row, i) => {
+        row.addEventListener('click', () => selectCompany(matches[i]));
+      });
+    }catch(e){ /* ignore transient search errors while typing */ }
+  }, 280);
+
+  $('q').addEventListener('input', doSearch);
+  $('q').addEventListener('keydown', e => {
+    if(e.key === 'Enter'){
+      const first = dropdown.querySelector('.row[data-code]');
+      if(first) first.click();
+    }
+  });
+  document.addEventListener('click', e => {
+    if(!dropdown.contains(e.target) && e.target !== $('q')) dropdown.classList.remove('show');
+  });
+
+  goBtn.addEventListener('click', () => { if(selected) loadAnnouncements(selected.bse_code, selected); });
+
+  $('addBtn').addEventListener('click', async () => {
+    if(!selected) return;
+    const btn = $('addBtn');
+    btn.disabled = true; btn.textContent = "Adding…";
+    try{
+      const r = await fetch('/api/watchlist', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(selected),
+      });
+      if(!r.ok) throw new Error((await r.json()).error || 'Failed to add');
+      await loadWatchlist();
+      updateAddButton();
+    }catch(e){
+      btn.textContent = "+ Add to watchlist"; btn.disabled = false;
+      alert("Couldn't add to watchlist: "+e.message);
+    }
+  });
+
+  async function loadWatchlist(){
+    const r = await fetch('/api/watchlist');
+    watchlist = await r.json();
+    $('wlCount').textContent = watchlist.length ? `(${watchlist.length})` : "";
+    $('wlEmpty').style.display = watchlist.length ? "none" : "block";
+    $('wlList').innerHTML = watchlist.map(w => `
+      <div class="wl-row" data-id="${w.id}">
+        <span class="rn" data-code="${esc(w.scrip_code)}">${esc(w.company_name||w.symbol||w.scrip_code)}</span>
+        <span class="rc">${esc(w.symbol||'')} · code ${esc(w.scrip_code)}${w.isin?` · ${esc(w.isin)}`:''}</span>
+        <span class="spacer"></span>
+        <button class="remove" data-id="${w.id}">remove</button>
+      </div>`).join("");
+
+    $('wlList').querySelectorAll('.rn[data-code]').forEach(el => {
+      el.addEventListener('click', () => {
+        const row = watchlist.find(w => String(w.scrip_code) === el.dataset.code);
+        if(row) selectCompany({bse_code: row.scrip_code, symbol: row.symbol, company_name: row.company_name, isin: row.isin});
+      });
+    });
+    $('wlList').querySelectorAll('button.remove').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = "…";
+        await fetch('/api/watchlist/'+btn.dataset.id, {method:'DELETE'});
+        await loadWatchlist();
+        updateAddButton();
+      });
+    });
+  }
+
+  async function loadAlerts(){
+    try{
+      const r = await fetch('/api/alerts?limit=30');
+      const items = await r.json();
+      $('alertsCount').textContent = items.length ? `(${items.length})` : "";
+      $('alertsEmpty').style.display = items.length ? "none" : "block";
+      $('alertsFeed').innerHTML = items.map(a => filingCard(a, true)).join("");
+    }catch(e){ /* transient — next poll will retry */ }
+  }
+
+  async function loadHealth(){
+    try{
+      const r = await fetch('/api/health');
+      const h = await r.json();
+      const dot = $('pollerDot'), text = $('pollerText');
+      if(!h.poller_last_tick_at){
+        dot.classList.add('stale');
+        text.textContent = "poller not running";
+      } else {
+        dot.classList.toggle('stale', h.poller_stale);
+        text.textContent = (h.poller_stale ? "poller stale · " : "poller live · ") + (h.poller_mode || "");
+      }
+    }catch(e){
+      $('pollerDot').classList.add('stale');
+      $('pollerText').textContent = "backend unreachable";
+    }
+  }
+
+  loadWatchlist();
+  loadAlerts();
+  loadHealth();
+  setInterval(loadAlerts, 30000);
+  setInterval(loadHealth, 30000);
 </script>
 </body>
 </html>
